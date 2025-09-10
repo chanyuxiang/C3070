@@ -1,0 +1,138 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Home</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <style>
+      .identity-card {
+        padding: 10px 15px;
+        margin-bottom: 10px;
+        border-radius: 6px;
+        box-shadow: 0 0 4px rgba(0, 0, 0, 0.1);
+      }
+      .card-header-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 0.95rem;
+      }
+      .btn-sm-fixed {
+        width: 120px;
+      }
+    </style>
+  </head>
+  <body class="bg-light">
+    <div class="container mt-5">
+      <h2 class="mb-4">Welcome to Identity Management</h2>
+
+      <div class="mb-4">
+        <strong>Username:</strong> <span id="username">Loading...</span><br />
+        <strong>Role:</strong> <span id="role">Loading...</span>
+      </div>
+
+      <div class="mb-3 d-flex gap-2">
+  <div class="d-flex gap-2 mb-3">
+  <!-- Public Profile -->
+  <a id="btn_public_profile" href="#" class="btn btn-outline-primary">Profile Page</a>
+
+  <!-- Edit Profile -->
+  <a href="/api/my-profile-page/" class="btn btn-primary">Edit Profile</a>
+</div>
+
+  <a href="/api/profile/{{ username }}/" class="btn btn-outline-primary d-none">My Public JSON (debug)</a>
+</div>
+
+<div class="mb-4">
+  <label class="form-label">Find people</label>
+
+  <form class="d-flex gap-2" onsubmit="return searchUsersSubmit(event)">
+    <input
+      id="user_q"
+      class="form-control"
+      placeholder="Search by username or label…"
+      oninput="searchUsersLive()"  
+      autocomplete="off"
+    />
+    <button type="submit" class="btn btn-primary">Search</button>
+  </form>
+
+  <!-- optional live results list; click to open profile page -->
+  <div id="user_results" class="list-group mt-2"></div>
+</div>
+
+<!-- Admin-only: Public name lookup (demo) -->
+<div id="admin_lookup_panel" class="card p-3 mt-3 d-none">
+  <div class="d-flex align-items-end gap-2">
+    <input id="lookup_username" class="form-control" placeholder="username, e.g., user1">
+    <input id="lookup_context" class="form-control" placeholder="Context, e.g., Work">
+    <button class="btn btn-outline-primary" onclick="openPublicLookup()">Open</button>
+  </div>
+  <div class="text-muted small mt-2">
+    For admins: demo of context & language negotiation.
+  </div>
+</div>
+
+
+<h4 class="mt-4">Your Identities:</h4>
+
+<div class="row g-2 align-items-end mb-3">
+  <div class="col-md-4">
+    <label class="form-label">Search name</label>
+    <input id="flt_q" class="form-control" placeholder="Type to search…" oninput="applyFilters()">
+  </div>
+  <div class="col-md-3">
+    <label class="form-label">Context</label>
+    <input id="flt_context" class="form-control" placeholder="e.g., Legal, Work" oninput="applyFilters()">
+  </div>
+  <div class="col-md-3">
+    <label class="form-label">Language</label>
+    <input id="flt_lang" class="form-control" placeholder="e.g., en, English, 中文" oninput="applyFilters()">
+  </div>
+  <div class="col-md-2">
+    <label class="form-label">Sort</label>
+    <select id="flt_sort" class="form-select" onchange="applyFilters()">
+      <option value="recent">Recently updated</option>
+      <option value="name_asc">Name A-Z</option>
+      <option value="name_desc">Name Z-A</option>
+      <option value="context_asc">Context A-Z</option>
+      <option value="created_new">Newest (created)</option>
+      <option value="created_old">Oldest (created)</option>
+    </select>
+  </div>
+</div>
+
+<div class="d-flex gap-2 mb-3">
+  <button class="btn btn-outline-secondary" onclick="clearFilters()">Clear</button>
+</div>
+
+<!-- Cards Grid -->
+<div class="row" id="identityList"></div>
+
+
+<!-- Actions -->
+<a href="/api/add-identity/" class="btn btn-success mt-3 me-2">Add Identity</a>
+<button onclick="logout()" class="btn btn-danger mt-3">Logout</button>
+<div class="d-flex gap-2 mt-2">
+  <button class="btn btn-outline-secondary" onclick="exportIdentities()">Export JSON</button>
+
+  <label class="btn btn-outline-secondary mb-0">
+    Import JSON
+    <input id="import_file" type="file" accept="application/json"
+           hidden onchange="importIdentitiesFromFile(event)">
+  </label>
+</div>
+
+
+<!-- Load JS at bottom -->
+<script src="{% static 'core/js/main.js' %}"></script>
+
+    <script>
+      initHomePage();
+    </script>
+  </body>
+</html>

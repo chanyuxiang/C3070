@@ -1,0 +1,165 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Profile</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+  </head>
+  <body class="bg-light">
+    <div class="container mt-5 col-lg-8">
+      <div class="card p-3">
+        <div class="d-flex align-items-center gap-3">
+          <img
+            id="pub_avatar"
+            src=""
+            alt="avatar"
+            class="rounded"
+            style="
+              width: 96px;
+              height: 96px;
+              object-fit: cover;
+              background: #eee;
+            "
+          />
+          <div>
+            <h4 class="mb-1">
+              <span id="pub_label">-</span>
+              <small id="pub_pronouns" class="text-muted ms-1"></small>
+            </h4>
+            <div class="text-muted">
+              Username: <span id="pub_username">-</span>
+            </div>
+            <div id="pub_gender" class="text-muted"></div>
+          </div>
+        </div>
+
+        <hr />
+
+        <div class="mb-1"><strong>Bio</strong></div>
+        <p id="pub_bio" class="mb-3 text-muted">—</p>
+
+        <div id="pub_links" class="d-flex flex-wrap gap-2"></div>
+      </div>
+      <div id="selected_identity_card"></div>
+
+      <a href="/api/home/" class="btn btn-link mt-3">Back to Home</a>
+    </div>
+
+    <script>
+      (async () => {
+        // URL pattern: /api/profile-page/<username>/
+        const parts = window.location.pathname.split("/").filter(Boolean);
+        const username = parts[parts.length - 1];
+
+        const res = await fetch(
+          `/api/profile/${encodeURIComponent(username)}/`
+        );
+        if (!res.ok) {
+          document.getElementById("pub_label").textContent =
+            "Profile not found";
+          return;
+        }
+        const data = await res.json();
+
+        // ---------- Name (no "dash"): preferred identity name -> display_label -> username ----------
+        const baseName =
+          data.preferred_identity_name ||
+          data.display_label ||
+          data.username ||
+          username;
+
+        // Put values into the card
+        document.getElementById("pub_username").textContent =
+          data.username || username;
+        document.getElementById("pub_label").textContent = baseName;
+        document.getElementById("pub_bio").textContent = data.bio || "—";
+
+        // Avatar
+        const img = document.getElementById("pub_avatar");
+        img.src = data.avatar_url || "";
+
+        // Pronouns (shown next to name if present)
+        document.getElementById("pub_pronouns").textContent = (
+          data.pronouns || ""
+        ).trim()
+          ? `(${data.pronouns.trim()})`
+          : "";
+
+        // Gender identity (line under username)
+        document.getElementById("pub_gender").textContent = (
+          data.gender_identity || ""
+        ).trim()
+          ? `Gender: ${data.gender_identity.trim()}`
+          : "";
+
+        // Links / handles
+        const links = [];
+        if (data.website) links.push({ href: data.website, label: "Website" });
+        if (data.github) {
+          const gh = String(data.github).replace(/^@/, "");
+          links.push({
+            href: `https://github.com/${gh}`,
+            label: `GitHub @${gh}`,
+          });
+        }
+        if (data.twitter) {
+          const tw = String(data.twitter).replace(/^@/, "");
+          links.push({
+            href: `https://twitter.com/${tw}`,
+            label: `Twitter @${tw}`,
+          });
+        }
+        if (data.linkedin)
+          links.push({ href: data.linkedin, label: "LinkedIn" });
+
+        const box = document.getElementById("pub_links");
+        if (links.length) {
+          box.innerHTML = links
+            .map(
+              (l) =>
+                `<a class="btn btn-sm btn-outline-secondary" target="_blank" rel="noopener noreferrer" href="${l.href}">${l.label}</a>`
+            )
+            .join("");
+        } else {
+          box.innerHTML = `<span class="text-muted">No links provided.</span>`;
+        }
+
+        // ---------- Optional: show a compact card for the selected identity ----------
+        // Requires your ProfileSerializer to include `preferred_identity_data`.
+        const pid = data.preferred_identity_data || null;
+        const pidBox = document.getElementById("selected_identity_card");
+        if (pidBox) {
+          if (pid) {
+            const fmt = (iso) => (iso ? new Date(iso).toLocaleString() : "-");
+            pidBox.innerHTML = `
+          <div class="card mt-3">
+            <div class="card-body">
+              <div class="d-flex justify-content-between align-items-start mb-2">
+                <span class="fw-semibold">${pid.context || ""}</span>
+              </div>
+              <div class="mb-1"><strong>Name:</strong> ${
+                pid.display_name || "-"
+              }</div>
+              <div class="mb-1"><strong>Language:</strong> ${
+                pid.language || "-"
+              }</div>
+              <div class="text-muted small">
+                Last updated: ${fmt(pid.updated_at)}
+                <span class="ms-2">•</span>
+                Created: ${fmt(pid.created_at)}
+              </div>
+            </div>
+          </div>
+        `;
+          } else {
+            pidBox.innerHTML = ""; // nothing selected → no extra card
+          }
+        }
+      })();
+    </script>
+  </body>
+</html>
