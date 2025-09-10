@@ -62,6 +62,7 @@ It supports multiple identity contexts (e.g., Legal, Social, Work), multilingual
    ```
 
 7. **Access the application**
+   - Loginpage: [http://127.0.0.1:8000/api/login/](http://127.0.0.1:8000/api/login/)  
    - Homepage: [http://127.0.0.1:8000/api/home/](http://127.0.0.1:8000/api/home/)  
    - Admin Panel: [http://127.0.0.1:8000/admin/](http://127.0.0.1:8000/admin/)
 
@@ -119,5 +120,3 @@ README.md          # This file
 
 ---
 
-## License
-This project is for educational use under the University of London CM3070 final project submission.
