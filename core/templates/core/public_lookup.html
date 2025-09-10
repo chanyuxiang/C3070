@@ -47,14 +47,15 @@
     <script>
       (async function init() {
         const parts = window.location.pathname.split("/");
-        const username = decodeURIComponent(parts[parts.length - 2]); // /api/public/lookup-page/<username>/
+        // /api/public/lookup-page/<username>/
+        const username = decodeURIComponent(parts[parts.length - 2]);
+
         const box = document.getElementById("box");
         const ctxInput = document.getElementById("ctx");
         const alInput = document.getElementById("al");
         const modeSel = document.getElementById("mode");
         const goBtn = document.getElementById("go");
 
-        // --- helpers: same look/feel as Home ---
         function pad2(n) {
           return String(n).padStart(2, "0");
         }
@@ -82,88 +83,79 @@
               <span class="fw-semibold">${titleCase(idObj.context || "")}</span>
               <span class="small text-muted">By: ${username}</span>
             </div>
-
             <div class="view-mode">
-              <div class="mb-1">
-                <strong>Name:</strong> <span class="v-name">${
-                  idObj.display_name || "-"
-                }</span>
-              </div>
-              <div class="mb-1">
-                <strong>Language:</strong> <span class="v-lang">${
-                  idObj.language || "-"
-                }</span>
-              </div>
+              <div class="mb-1"><strong>Name:</strong> ${
+                idObj.display_name || "-"
+              }</div>
+              <div class="mb-1"><strong>Language:</strong> ${
+                idObj.language || "-"
+              }</div>
               <div class="mb-2 text-muted small">
-                Last updated: ${formatDateISO(idObj.updated_at)} 
+                Last updated: ${formatDateISO(idObj.updated_at)}
                 <span class="ms-2">•</span> Created: ${formatDateISO(
                   idObj.created_at
                 )}
               </div>
             </div>
           </div>
-        </div>
-      `;
+        </div>`;
         }
+
+        // Prefill from URL (if opened with ?context=...&accept_language=...&mode=...)
+        const qs = new URLSearchParams(location.search);
+        if (ctxInput) ctxInput.value = qs.get("context") || "";
+        if (alInput) alInput.value = qs.get("accept_language") || "";
+        if (modeSel)
+          modeSel.value =
+            (qs.get("mode") || "best") === "all"
+              ? "list"
+              : qs.get("mode") || "best";
 
         async function load() {
           const ctx = (ctxInput?.value || "").trim();
-          const al = (alInput?.value || "").trim();
-          const mode = (modeSel?.value || "best").trim();
+          const lang = (alInput?.value || "").trim();
+          const mode = (modeSel?.value || "best").trim(); // "best" or "list"
 
           const params = new URLSearchParams();
           if (ctx) params.set("context", ctx);
-          if (al) params.set("al", al);
-          if (mode) params.set("mode", mode);
-
-          const headers = {};
-          if (ctx) headers["X-Use-Context"] = ctx;
-          if (al) headers["X-Accept-Language"] = al;
+          if (lang) params.set("accept_language", lang);
+          params.set("mode", mode);
 
           const res = await fetch(
             `/api/public/lookup/${encodeURIComponent(username)}/?` +
-              params.toString(),
-            { headers }
-          );
-          if (!res.ok) {
-            box.textContent = "Failed to load";
+              params.toString()
+          ).catch(() => null);
+          if (!res || !res.ok) {
+            box.textContent = "Failed to load.";
             return;
           }
           const data = await res.json();
-          function prettyLang(code) {
-            return (code || "").toLowerCase();
-          } // or your nicer mapping
-
-          const acceptLangText = al
-            ? (data.accept_language || []).map(prettyLang).join(", ") || "-"
-            : "-";
 
           const header = `
-                <div><strong>User:</strong> ${data.username}</div>
-                <div><strong>Context used:</strong> ${
-                  data.used_context || "-"
-                }</div>
-                <div><strong>Language preference:</strong> ${acceptLangText}</div>
-                <hr/>
-                `;
+        <div><strong>User:</strong> ${data.username}</div>
+        <div><strong>Context used:</strong> ${data.applied_context || "-"}</div>
+        <div><strong>Language preference:</strong> ${
+          (data.accept_language || []).join(", ") || "-"
+        }</div>
+        <hr/>`;
 
+          const items = data.results || [];
           if (mode === "list") {
-            const items = data.results || [];
             box.innerHTML =
               header +
               (items.length
                 ? items.map(identityCard).join("")
                 : "<div>No matches.</div>");
           } else {
-            const id = data.identity;
+            const first = items[0] || null;
             box.innerHTML =
               header +
-              (id ? identityCard(id) : "<div>No identity found.</div>");
+              (first ? identityCard(first) : "<div>No identity found.</div>");
           }
         }
 
         goBtn.addEventListener("click", load);
-        await load();
+        await load(); // initial render
       })();
     </script>
   </body>

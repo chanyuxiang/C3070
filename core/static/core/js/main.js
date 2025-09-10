@@ -757,16 +757,114 @@ async function searchUsersSubmit(e) {
 }
 
 function openPublicLookup() {
-  const u = (document.getElementById("lookup_username").value || "").trim();
-  const ctx = (document.getElementById("lookup_context").value || "").trim();
+  const u = (document.getElementById("lookup_username")?.value || "").trim();
+  const ctx = (document.getElementById("lookup_context")?.value || "").trim();
+  const lang = (document.getElementById("lookup_language")?.value || "").trim(); // optional field on Home
+  const mode = (document.getElementById("lookup_mode")?.value || "").trim(); // optional select on Home ("best"|"all")
+
   if (!u) {
     alert("Username is required");
     return;
   }
+
+  const params = new URLSearchParams();
+  if (ctx) params.set("context", ctx);
+  if (lang) params.set("accept_language", lang);
+  if (mode) params.set("mode", mode);
+
+  const query = params.toString();
   const url = `/api/public/lookup-page/${encodeURIComponent(u)}/${
-    ctx ? `?context=${encodeURIComponent(ctx)}` : ""
+    query ? "?" + query : ""
   }`;
   window.location.href = url;
+}
+
+// --------- Public Lookup page ----------
+async function initPublicLookupPage() {
+  // prefill from querystring if present, then fetch once
+  const params = new URLSearchParams(window.location.search);
+  const ctx = params.get("context") || "";
+  const lang = params.get("accept_language") || "";
+  const mode = (params.get("mode") || "best").toLowerCase();
+
+  if (document.getElementById("ctx"))
+    document.getElementById("ctx").value = ctx;
+  if (document.getElementById("lang"))
+    document.getElementById("lang").value = lang;
+  if (document.getElementById("mode"))
+    document.getElementById("mode").value = mode;
+
+  await applyLookup(); // initial render
+}
+
+async function applyLookup() {
+  // URL pattern: /api/public/lookup-page/<username>/
+  const parts = window.location.pathname.split("/").filter(Boolean);
+  // [..., "lookup-page", "<username>"]
+  const username = parts[parts.length - 1];
+
+  const ctx = (document.getElementById("ctx")?.value || "").trim();
+  const lang = (document.getElementById("lang")?.value || "").trim();
+  const mode = (document.getElementById("mode")?.value || "best").toLowerCase(); // "best" | "all"
+
+  const params = new URLSearchParams();
+  if (ctx) params.set("context", ctx);
+  if (lang) params.set("accept_language", lang);
+  params.set("mode", mode);
+
+  // call JSON API
+  const res = await fetch(
+    `/api/public/lookup/${encodeURIComponent(username)}/?` + params.toString()
+  );
+  if (!res.ok) {
+    alert("Lookup failed.");
+    return;
+  }
+  const data = await res.json();
+
+  // summary header
+  if (document.getElementById("lk_user"))
+    document.getElementById("lk_user").textContent = data.username || username;
+  if (document.getElementById("lk_ctx"))
+    document.getElementById("lk_ctx").textContent = data.applied_context || "-";
+  if (document.getElementById("lk_lang"))
+    document.getElementById("lk_lang").textContent =
+      (data.accept_language || []).join(", ") || "-";
+
+  renderLookupResults(data.results || []);
+}
+
+function renderLookupResults(list) {
+  const box = document.getElementById("lookup_results");
+  if (!box) return;
+  if (!list.length) {
+    box.innerHTML = `<div class="text-muted">No results.</div>`;
+    return;
+  }
+
+  box.innerHTML = list
+    .map(
+      (item) => `
+    <div class="card mb-3">
+      <div class="card-body">
+        <div class="d-flex justify-content-between">
+          <strong>${item.context || "-"}</strong>
+          <span class="small text-muted">By: ${item.username || "user"}</span>
+        </div>
+        <div class="mt-2">
+          <div><strong>Name:</strong> ${item.display_name || "-"}</div>
+          <div><strong>Language:</strong> ${item.language || "-"}</div>
+          <div class="text-muted small mt-2">
+            Last updated: ${formatDateISO(item.updated_at)}
+            <span class="ms-2">•</span>
+            Created: ${formatDateISO(item.created_at)}
+          </div>
+        </div>
+      </div>
+    </div>
+  `
+    )
+    .join("");
 }
 
 // ----------------------------

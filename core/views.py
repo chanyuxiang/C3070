@@ -4,6 +4,7 @@ from django.http import JsonResponse, HttpResponseBadRequest
 from django.contrib.auth.models import User
 from django.views.decorators.csrf import csrf_exempt
 from django.db.models import Q
+from django.db.models.functions import Lower
 
 from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -112,135 +113,136 @@ def search_users(request):
     } for u in qs[:20]]
     return JsonResponse({'results': data}, status=200)
 
-def _parse_accept_language(header_value: str):
-    if not header_value:
-        return []
-    langs = []
-    for part in header_value.split(","):
-        item = part.strip()
-        if not item:
-            continue
-        if ";q=" in item:
-            lang, q = item.split(";q=", 1)
-            try:
-                qv = float(q)
-            except ValueError:
-                qv = 1.0
-        else:
-            lang, qv = item, 1.0
-        langs.append((lang.strip().lower(), qv))
-    langs.sort(key=lambda x: x[1], reverse=True)
-    return langs
+# def _parse_accept_language(header_value: str):
+#     if not header_value:
+#         return []
+#     langs = []
+#     for part in header_value.split(","):
+#         item = part.strip()
+#         if not item:
+#             continue
+#         if ";q=" in item:
+#             lang, q = item.split(";q=", 1)
+#             try:
+#                 qv = float(q)
+#             except ValueError:
+#                 qv = 1.0
+#         else:
+#             lang, qv = item, 1.0
+#         langs.append((lang.strip().lower(), qv))
+#     langs.sort(key=lambda x: x[1], reverse=True)
+#     return langs
 
-def _primary(lang: str):
-    return (lang or "").split("-", 1)[0].lower()
+# def _primary(lang: str):
+#     return (lang or "").split("-", 1)[0].lower()
 
-def _score_identity(identity, want_ctx: str, accept_langs):
-    score = 0.0
-    if want_ctx and identity.context and identity.context.lower() == want_ctx.lower():
-        score += 100
-    if accept_langs:
-        id_lang = (identity.language or "").lower()
-        id_primary = _primary(id_lang)
-        for idx, (al, q) in enumerate(accept_langs):
-            weight = max(q, 0.1)
-            if id_lang and id_lang == al:
-                score += 20 * weight / (1 + idx*0.1)
-                break
-            if id_primary and id_primary == _primary(al):
-                score += 8 * weight / (1 + idx*0.1)
-    try:
-        score += (identity.updated_at.timestamp() % 1)
-    except Exception:
-        pass
-    return score
+# def _score_identity(identity, want_ctx: str, accept_langs):
+#     score = 0.0
+#     if want_ctx and identity.context and identity.context.lower() == want_ctx.lower():
+#         score += 100
+#     if accept_langs:
+#         id_lang = (identity.language or "").lower()
+#         id_primary = _primary(id_lang)
+#         for idx, (al, q) in enumerate(accept_langs):
+#             weight = max(q, 0.1)
+#             if id_lang and id_lang == al:
+#                 score += 20 * weight / (1 + idx*0.1)
+#                 break
+#             if id_primary and id_primary == _primary(al):
+#                 score += 8 * weight / (1 + idx*0.1)
+#     try:
+#         score += (identity.updated_at.timestamp() % 1)
+#     except Exception:
+#         pass
+#     return score
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def public_identity_lookup(request, username):
+    user = get_object_or_404(User, username=username)
+    qs = Identity.objects.filter(user=user)
 
-    user = get_object_or_404(User.objects.only('id', 'username'), username=username)
-    identities = Identity.objects.filter(user=user).order_by('-updated_at', '-created_at')
+    # --- Context: fuzzy, case-insensitive ---
+    ctx = (request.GET.get('context') or '').strip()
+    if ctx:
+        qs = qs.filter(context__icontains=ctx)
 
-    if not identities.exists():
-        return Response({'username': username, 'identity': None, 'results': [], 'note': 'No identities found'},
-                        status=status.HTTP_200_OK)
+    # --- Language: strict gate (Option B) with normalisation & aliases ---
+    raw_lang = (
+        (request.GET.get('accept_language') or '').strip()
+        or (request.GET.get('al') or '').strip()
+    )
 
-    mode = (request.GET.get('mode') or 'best').lower().strip()
-    want_ctx = (request.headers.get('X-Use-Context') or request.GET.get('context') or '').strip()
+    def norm_lang(s: str) -> str:
+        """
+        Normalise to primary BCP-47 code when possible.
+        Accepts words like 'english', 'chinese' and tags like 'en-GB', 'zh-CN'.
+        Returns primary code ('en','zh',...) or '' if unknown.
+        """
+        if not s:
+            return ''
+        s = s.strip().lower()
 
-    # Optional demo override for language preference
-    al_override = (request.GET.get('al') or request.headers.get('X-Accept-Language') or '').strip()
-    accept_lang_header = al_override or (request.headers.get('Accept-Language') or '')
-    accept_langs = _parse_accept_language(accept_lang_header)
+        # Common word aliases
+        word_alias = {
+            'english': 'en',
+            'chinese': 'zh',
+            'mandarin': 'zh',
+            'malay': 'ms',
+            'tamil': 'ta',
+        }
+        if s in word_alias:
+            return word_alias[s]
 
-    def lang_matches(id_lang: str) -> bool:
-        """True if id_lang equals any accepted tag or shares the same primary subtag."""
-        if not accept_langs:
-            return True  # no language preference -> accept all
-        id_lang = (id_lang or '').lower()
-        id_primary = _primary(id_lang)
-        for al, _q in accept_langs:
-            if id_lang == al:
-                return True
-            if id_primary and id_primary == _primary(al):
-                return True
-        return False
+        # If looks like a tag, reduce to primary (en, zh, ms, ta...)
+        if '-' in s:
+            s = s.split('-', 1)[0]
 
-    # Filter by context first (for both modes, if provided)
-    if want_ctx:
-        identities = [i for i in identities if (i.context or '').lower() == want_ctx.lower()]
+        # if they typed 'en' / 'zh' already, keep it
+        if len(s) in (2, 3):  # crude but fine for our set
+            return s
+        return ''
+
+    # Parse a comma-separated list (or Accept-Language-esque)
+    requested_langs = [p.split(';', 1)[0].strip() for p in raw_lang.split(',') if p.strip()]
+    requested_primary = [norm_lang(p) for p in requested_langs]
+    requested_primary = [p for p in requested_primary if p]  # drop unknowns
+
+    items = list(qs)
+
+    if requested_primary:
+        def lang_matches(code: str) -> bool:
+            """
+            Strict gate: record must match one of the requested primaries.
+            We normalise the record language too (so 'Chinese'/'zh-CN'/'zh' all → 'zh').
+            """
+            c = norm_lang(code or '')
+            return bool(c) and (c in requested_primary)
+
+        items = [i for i in items if lang_matches(i.language)]
+
+    # Sort: newest first (stable)
+    def ts(x):
+        return (x.updated_at or x.created_at)
+    items.sort(key=ts, reverse=True)
+
+    # Mode handling (always return results array)
+    mode = (request.GET.get('mode') or 'best').strip().lower()
+    if mode == 'best':
+        items = items[:1]  # single best
+        mode_out = 'best'
     else:
-        identities = list(identities)
+        mode_out = 'list'
 
-    if mode == 'list':
-        # filter by language (exact or primary) if Accept-Language present
-        lang_filtered = [i for i in identities if lang_matches(i.language)]
-        results = lang_filtered if lang_filtered else identities  # fallback: context-only
-
-        # order by score (so "best" is first), but return ALL
-        scored = sorted(
-            results,
-            key=lambda i: _score_identity(i, want_ctx, accept_langs),
-            reverse=True
-        )
-        payload = [{
-            'id': i.id,
-            'display_name': i.display_name,
-            'context': i.context,
-            'language': i.language,
-            'created_at': i.created_at,
-            'updated_at': i.updated_at,
-        } for i in scored]
-
-        return Response({
-            'username': user.username,
-            'used_context': want_ctx or None,
-            'accept_language': [al for al, _ in accept_langs] or None,
-            'results': payload,
-        }, status=status.HTTP_200_OK)
-
-    # mode=best (default) – keep old behavior
-    best, best_score = None, float('-inf')
-    for ident in identities if identities else Identity.objects.filter(user=user):
-        s = _score_identity(ident, want_ctx, accept_langs)
-        if s > best_score:
-            best, best_score = ident, s
-
-    data = {
-        'username': user.username,
-        'used_context': want_ctx or None,
-        'accept_language': [al for al, _ in accept_langs] or None,
-        'identity': None if not best else {
-            'id': best.id,
-            'display_name': best.display_name,
-            'context': best.context,
-            'language': best.language,
-            'created_at': best.created_at,
-            'updated_at': best.updated_at,
-        },
-    }
-    return Response(data, status=status.HTTP_200_OK)
+    data = IdentitySerializer(items, many=True, context={'request': request}).data
+    return JsonResponse({
+        "username": user.username,
+        "applied_context": ctx or None,
+        "accept_language": requested_langs,   # original tokens user typed
+        "mode": mode_out,
+        "count": len(data),
+        "results": data,
+    }, status=200)
 
 
 @api_view(['GET'])
