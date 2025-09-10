@@ -174,11 +174,7 @@ def public_identity_lookup(request, username):
     )
 
     def norm_lang(s: str) -> str:
-        """
-        Normalise to primary BCP-47 code when possible.
-        Accepts words like 'english', 'chinese' and tags like 'en-GB', 'zh-CN'.
-        Returns primary code ('en','zh',...) or '' if unknown.
-        """
+
         if not s:
             return ''
         s = s.strip().lower()
@@ -212,10 +208,7 @@ def public_identity_lookup(request, username):
 
     if requested_primary:
         def lang_matches(code: str) -> bool:
-            """
-            Strict gate: record must match one of the requested primaries.
-            We normalise the record language too (so 'Chinese'/'zh-CN'/'zh' all → 'zh').
-            """
+
             c = norm_lang(code or '')
             return bool(c) and (c in requested_primary)
 
